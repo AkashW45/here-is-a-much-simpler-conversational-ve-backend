@@ -10,6 +10,18 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// Generate 10 KB random text (alias)
+app.get('/generate', (req, res) => {
+  const size = 10 * 1024;
+  const randomBytes = crypto.randomBytes(size);
+  const textBuffer = Buffer.alloc(size);
+  for (let i = 0; i < size; i++) {
+    textBuffer[i] = (randomBytes[i] % 95) + 32;
+  }
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(textBuffer);
+});
+
 // Generate 10 KB random text
 app.get('/api/generate', (req, res) => {
   const size = 10 * 1024; // 10240 bytes
@@ -20,7 +32,6 @@ app.get('/api/generate', (req, res) => {
     textBuffer[i] = (randomBytes[i] % 95) + 32;
   }
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="random.txt"');
   res.send(textBuffer);
 });
 

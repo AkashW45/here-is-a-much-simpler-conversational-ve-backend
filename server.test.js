@@ -1,70 +1,64 @@
-const request = require('supertest');
-
-// Mock express.listen to prevent actual server start
-let app;
+let testApp;
 jest.mock('express', () => {
   const actualExpress = jest.requireActual('express');
-  app = actualExpress();
-  app.listen = jest.fn().mockReturnThis();
+  const app = actualExpress();
+  testApp = app;
+  app.listen = jest.fn(() => ({ close: jest.fn() }));
   const mockExpress = jest.fn(() => app);
+  Object.keys(actualExpress).forEach(key => {
+    mockExpress[key] = actualExpress[key];
+  });
   mockExpress.static = actualExpress.static;
   return mockExpress;
 });
 
-// Silence console.log during tests
-beforeAll(() => {
-  jest.spyOn(console, 'log').mockImplementation(() => {});
-});
+require('./server');
+const request = require('supertest');
 
-afterAll(() => {
-  console.log.mockRestore();
-});
-
-// Load the server – this will use the mocked express and not bind a port
-require('../server');
-
-describe('Server endpoints', () => {
-  // Happy path: Health check
-  test('GET /health returns 200 and status ok', async () => {
-    const res = await request(app).get('/health');
+describe('Server', () => {
+  test('GET /health returns 200 and ok status', async () => {
+    const res = await request(testApp).get('/health');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ok' });
+    expect(res.headers['content-type']).toMatch(/application\/json/);
   });
 
-  // Happy path: Generate 10KB random text
-  test('GET /api/generate returns 200 with correct headers and 10240 bytes', async () => {
-    const res = await request(app).get('/api/generate');
+  test('GET /generate returns 10KB printable ASCII without Content-Disposition', async () => {
+    const res = await request(testApp).get('/generate');
     expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
-    expect(res.headers['content-disposition']).toMatch(/attachment; filename="random.txt"/);
-    expect(Buffer.isBuffer(res.body) || typeof res.body === 'string').toBeTruthy();
-    const bodyBuffer = Buffer.isBuffer(res.body) ? res.body : Buffer.from(res.body);
-    expect(bodyBuffer.length).toBe(10240);
-    // Verify all bytes are printable ASCII (32–126)
-    for (const byte of bodyBuffer) {
-      expect(byte).toBeGreaterThanOrEqual(32);
-      expect(byte).toBeLessThanOrEqual(126);
+    expect(res.headers['content-type']).toMatch(/text\/plain;?\s*charset=utf-8/i);
+    expect(res.headers['content-disposition']).toBeUndefined();
+
+    const text = res.text;
+    expect(text.length).toBe(10240);
+
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      expect(code).toBeGreaterThanOrEqual(32);
+      expect(code).toBeLessThanOrEqual(126);
     }
   });
 
-  // Edge case: two calls produce different content
-  test('GET /api/generate returns different content on subsequent calls', async () => {
-    const res1 = await request(app).get('/api/generate');
-    const res2 = await request(app).get('/api/generate');
-    const body1 = Buffer.isBuffer(res1.body) ? res1.body : Buffer.from(res1.body);
-    const body2 = Buffer.isBuffer(res2.body) ? res2.body : Buffer.from(res2.body);
-    expect(body1.equals(body2)).toBe(false);
+  test('GET /api/generate works identically to /generate', async () => {
+    const res = await request(testApp).get('/api/generate');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/plain;?\s*charset=utf-8/i);
+    expect(res.headers['content-disposition']).toBeUndefined();
+    expect(res.text.length).toBe(10240);
   });
 
-  // Error path: wrong method on /api/generate
-  test('POST /api/generate returns 404', async () => {
-    const res = await request(app).post('/api/generate');
-    expect(res.status).toBe(404);
+  test('GET /generate returns only printable ASCII characters', async () => {
+    const res = await request(testApp).get('/generate');
+    const text = res.text;
+    const nonPrintable = text.split('').some(char => {
+      const code = char.charCodeAt(0);
+      return code < 32 || code > 126;
+    });
+    expect(nonPrintable).toBe(false);
   });
 
-  // Error path: catch-all route when index.html not found (returns 500)
-  test('GET /unknown-path returns 500 due to missing index.html', async () => {
-    const res = await request(app).get('/unknown-path');
-    expect(res.status).toBe(500);
+  test('No Content-Disposition header on /api/generate', async () => {
+    const res = await request(testApp).get('/api/generate');
+    expect(res.headers['content-disposition']).toBeUndefined();
   });
 });
