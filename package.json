@@ -1,0 +1,13 @@
+{
+  "name": "random-text-generator",
+  "version": "1.0.0",
+  "description": "Generate 10 KB random text file",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
